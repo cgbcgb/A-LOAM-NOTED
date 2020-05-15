@@ -89,14 +89,15 @@ pcl::PointCloud<PointType>::Ptr laserCloudFullRes(new pcl::PointCloud<PointType>
 int laserCloudCornerLastNum = 0;
 int laserCloudSurfLastNum = 0;
 
-// Transformation from current frame to world frame
+// Lidar Odometry线程估计的frame在world坐标系的位姿P，Transformation from current frame to world frame
 Eigen::Quaterniond q_w_curr(1, 0, 0, 0);
 Eigen::Vector3d t_w_curr(0, 0, 0);
 
-// q_curr_last(x, y, z, w), t_curr_last
+// 点云特征匹配时的优化变量
 double para_q[4] = {0, 0, 0, 1};
 double para_t[3] = {0, 0, 0};
 
+// 下面的2个分别是优化变量para_q和para_t的映射：表示的是两个world坐标系下的位姿P之间的增量，例如△P = P0.inverse() * P1
 Eigen::Map<Eigen::Quaterniond> q_last_curr(para_q);
 Eigen::Map<Eigen::Vector3d> t_last_curr(para_t);
 
@@ -264,7 +265,9 @@ int main(int argc, char **argv)
 
             TicToc t_whole;
             // initializing
-            if (!systemInited)
+            if (!systemInited)// 第一帧不进行匹配，仅仅将 cornerPointsLessSharp 保存至 laserCloudCornerLast
+                              //                       将 surfPointsLessFlat    保存至 laserCloudSurfLast
+                              // 为下次匹配提供target
             {
                 systemInited = true;
                 std::cout << "Initialization finished \n";
@@ -275,7 +278,7 @@ int main(int argc, char **argv)
                 int surfPointsFlatNum = surfPointsFlat->points.size();
 
                 TicToc t_opt;
-                for (size_t opti_counter = 0; opti_counter < 2; ++opti_counter)
+                for (size_t opti_counter = 0; opti_counter < 2; ++opti_counter)// 点到线以及点到面的ICP，迭代2次
                 {
                     corner_correspondence = 0;
                     plane_correspondence = 0;
@@ -295,24 +298,25 @@ int main(int argc, char **argv)
                     std::vector<float> pointSearchSqDis;
 
                     TicToc t_data;
-                    // find correspondence for corner features
+                    // 基于最近邻原理建立corner特征点之间关联，find correspondence for corner features
                     for (int i = 0; i < cornerPointsSharpNum; ++i)
                     {
-                        TransformToStart(&(cornerPointsSharp->points[i]), &pointSel);
-                        kdtreeCornerLast->nearestKSearch(pointSel, 1, pointSearchInd, pointSearchSqDis);
+                        TransformToStart(&(cornerPointsSharp->points[i]), &pointSel);// 将当前帧的corner_sharp特征点O_cur，从当前帧的Lidar坐标系下变换到上一帧的Lidar坐标系下（记为点O，注意与前面的点O_cur不同），以利于寻找corner特征点的correspondence
+                        kdtreeCornerLast->nearestKSearch(pointSel, 1, pointSearchInd, pointSearchSqDis);// kdtree中的点云是上一帧的corner_less_sharp，所以这是在上一帧
+                                                                                                        // 的corner_less_sharp中寻找当前帧corner_sharp特征点O的最近邻点（记为A）
 
                         int closestPointInd = -1, minPointInd2 = -1;
-                        if (pointSearchSqDis[0] < DISTANCE_SQ_THRESHOLD)
+                        if (pointSearchSqDis[0] < DISTANCE_SQ_THRESHOLD)// 如果最近邻的corner特征点之间距离平方小于阈值，则最近邻点A有效
                         {
                             closestPointInd = pointSearchInd[0];
                             int closestPointScanID = int(laserCloudCornerLast->points[closestPointInd].intensity);
 
                             double minPointSqDis2 = DISTANCE_SQ_THRESHOLD;
-                            // search in the direction of increasing scan line
-                            for (int j = closestPointInd + 1; j < (int)laserCloudCornerLast->points.size(); ++j)
-                            {
+                            // 寻找点O的另外一个最近邻的点（记为点B） in the direction of increasing scan line
+                            for (int j = closestPointInd + 1; j < (int)laserCloudCornerLast->points.size(); ++j)// laserCloudCornerLast 来自上一帧的corner_less_sharp特征点,由于提取特征时是
+                            {                                                                                   // 按照scan的顺序提取的，所以laserCloudCornerLast中的点也是按照scanID递增的顺序存放的
                                 // if in the same scan line, continue
-                                if (int(laserCloudCornerLast->points[j].intensity) <= closestPointScanID)
+                                if (int(laserCloudCornerLast->points[j].intensity) <= closestPointScanID)// intensity整数部分存放的是scanID
                                     continue;
 
                                 // if not in nearby scans, end the loop
@@ -326,7 +330,7 @@ int main(int argc, char **argv)
                                                     (laserCloudCornerLast->points[j].z - pointSel.z) *
                                                         (laserCloudCornerLast->points[j].z - pointSel.z);
 
-                                if (pointSqDis < minPointSqDis2)
+                                if (pointSqDis < minPointSqDis2)// 第二个最近邻点有效,，更新点B
                                 {
                                     // find nearer point
                                     minPointSqDis2 = pointSqDis;
@@ -334,7 +338,7 @@ int main(int argc, char **argv)
                                 }
                             }
 
-                            // search in the direction of decreasing scan line
+                            // 寻找点O的另外一个最近邻的点B in the direction of decreasing scan line
                             for (int j = closestPointInd - 1; j >= 0; --j)
                             {
                                 // if in the same scan line, continue
@@ -352,7 +356,7 @@ int main(int argc, char **argv)
                                                     (laserCloudCornerLast->points[j].z - pointSel.z) *
                                                         (laserCloudCornerLast->points[j].z - pointSel.z);
 
-                                if (pointSqDis < minPointSqDis2)
+                                if (pointSqDis < minPointSqDis2)// 第二个最近邻点有效，更新点B
                                 {
                                     // find nearer point
                                     minPointSqDis2 = pointSqDis;
@@ -361,7 +365,7 @@ int main(int argc, char **argv)
                             }
                         }
                         if (minPointInd2 >= 0) // both closestPointInd and minPointInd2 is valid
-                        {
+                        {                      // 即特征点O的两个最近邻点A和B都有效
                             Eigen::Vector3d curr_point(cornerPointsSharp->points[i].x,
                                                        cornerPointsSharp->points[i].y,
                                                        cornerPointsSharp->points[i].z);
@@ -372,25 +376,27 @@ int main(int argc, char **argv)
                                                          laserCloudCornerLast->points[minPointInd2].y,
                                                          laserCloudCornerLast->points[minPointInd2].z);
 
-                            double s;
+                            double s;// 运动补偿系数，kitti数据集的点云已经被补偿过，所以s = 1.0
                             if (DISTORTION)
                                 s = (cornerPointsSharp->points[i].intensity - int(cornerPointsSharp->points[i].intensity)) / SCAN_PERIOD;
                             else
                                 s = 1.0;
+                            // 用点O，A，B构造点到线的距离的残差项，注意这三个点都是在上一帧的Lidar坐标系下，即，残差 = 点O到直线AB的距离
+                            // 具体到介绍lidarFactor.cpp时再说明该残差的具体计算方法
                             ceres::CostFunction *cost_function = LidarEdgeFactor::Create(curr_point, last_point_a, last_point_b, s);
                             problem.AddResidualBlock(cost_function, loss_function, para_q, para_t);
                             corner_correspondence++;
                         }
                     }
-
-                    // find correspondence for plane features
+                    // 下面说的点符号与上述相同
+                    // 与上面的建立corner特征点之间的关联类似，寻找平面特征点O的最近邻点ABC，即基于最近邻原理建立surf特征点之间的关联，find correspondence for plane features
                     for (int i = 0; i < surfPointsFlatNum; ++i)
                     {
                         TransformToStart(&(surfPointsFlat->points[i]), &pointSel);
                         kdtreeSurfLast->nearestKSearch(pointSel, 1, pointSearchInd, pointSearchSqDis);
 
                         int closestPointInd = -1, minPointInd2 = -1, minPointInd3 = -1;
-                        if (pointSearchSqDis[0] < DISTANCE_SQ_THRESHOLD)
+                        if (pointSearchSqDis[0] < DISTANCE_SQ_THRESHOLD)// 找到的最近邻点A有效
                         {
                             closestPointInd = pointSearchInd[0];
 
@@ -415,13 +421,13 @@ int main(int argc, char **argv)
                                 // if in the same or lower scan line
                                 if (int(laserCloudSurfLast->points[j].intensity) <= closestPointScanID && pointSqDis < minPointSqDis2)
                                 {
-                                    minPointSqDis2 = pointSqDis;
+                                    minPointSqDis2 = pointSqDis;// 找到的第2个最近邻点有效，更新点B，注意如果scanID准确的话，一般点A和点B的scanID相同
                                     minPointInd2 = j;
                                 }
                                 // if in the higher scan line
                                 else if (int(laserCloudSurfLast->points[j].intensity) > closestPointScanID && pointSqDis < minPointSqDis3)
                                 {
-                                    minPointSqDis3 = pointSqDis;
+                                    minPointSqDis3 = pointSqDis;// 找到的第3个最近邻点有效，更新点C，注意如果scanID准确的话，一般点A和点B的scanID相同,且与点C的scanID不同，与LOAM的paper叙述一致
                                     minPointInd3 = j;
                                 }
                             }
@@ -454,7 +460,7 @@ int main(int argc, char **argv)
                                 }
                             }
 
-                            if (minPointInd2 >= 0 && minPointInd3 >= 0)
+                            if (minPointInd2 >= 0 && minPointInd3 >= 0)// 如果三个最近邻点都有效
                             {
 
                                 Eigen::Vector3d curr_point(surfPointsFlat->points[i].x,
@@ -475,6 +481,8 @@ int main(int argc, char **argv)
                                     s = (surfPointsFlat->points[i].intensity - int(surfPointsFlat->points[i].intensity)) / SCAN_PERIOD;
                                 else
                                     s = 1.0;
+                                // 用点O，A，B，C构造点到面的距离的残差项，注意这三个点都是在上一帧的Lidar坐标系下，即，残差 = 点O到平面ABC的距离
+                                // 同样的，具体到介绍lidarFactor.cpp时再说明该残差的具体计算方法
                                 ceres::CostFunction *cost_function = LidarPlaneFactor::Create(curr_point, last_point_a, last_point_b, last_point_c, s);
                                 problem.AddResidualBlock(cost_function, loss_function, para_q, para_t);
                                 plane_correspondence++;
@@ -482,7 +490,6 @@ int main(int argc, char **argv)
                         }
                     }
 
-                    //printf("coner_correspondance %d, plane_correspondence %d \n", corner_correspondence, plane_correspondence);
                     printf("data association time %f ms \n", t_data.toc());
 
                     if ((corner_correspondence + plane_correspondence) < 10)
@@ -496,11 +503,13 @@ int main(int argc, char **argv)
                     options.max_num_iterations = 4;
                     options.minimizer_progress_to_stdout = false;
                     ceres::Solver::Summary summary;
+                    // 基于构建的所有残差项，求解最优的当前帧位姿与上一帧位姿的位姿增量：para_q和para_t
                     ceres::Solve(options, &problem, &summary);
                     printf("solver time %f ms \n", t_solver.toc());
                 }
                 printf("optimization twice time %f \n", t_opt.toc());
 
+                // 用最新计算出的位姿增量，更新上一帧的位姿，得到当前帧的位姿，注意这里说的位姿都指的是世界坐标系下的位姿
                 t_w_curr = t_w_curr + q_w_curr * t_last_curr;
                 q_w_curr = q_w_curr * q_last_curr;
             }
@@ -564,7 +573,7 @@ int main(int argc, char **argv)
 
             // std::cout << "the size of corner last is " << laserCloudCornerLastNum << ", and the size of surf last is " << laserCloudSurfLastNum << '\n';
 
-            kdtreeCornerLast->setInputCloud(laserCloudCornerLast);
+            kdtreeCornerLast->setInputCloud(laserCloudCornerLast);// 更新kdtree的点云
             kdtreeSurfLast->setInputCloud(laserCloudSurfLast);
 
             if (frameCount % skipFrameNum == 0)

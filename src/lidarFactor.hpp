@@ -9,6 +9,7 @@
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl_conversions/pcl_conversions.h>
 
+// 点到线的残差距离计算
 struct LidarEdgeFactor
 {
 	LidarEdgeFactor(Eigen::Vector3d curr_point_, Eigen::Vector3d last_point_a_,
@@ -18,7 +19,6 @@ struct LidarEdgeFactor
 	template <typename T>
 	bool operator()(const T *q, const T *t, T *residual) const
 	{
-
 		Eigen::Matrix<T, 3, 1> cp{T(curr_point.x()), T(curr_point.y()), T(curr_point.z())};
 		Eigen::Matrix<T, 3, 1> lpa{T(last_point_a.x()), T(last_point_a.y()), T(last_point_a.z())};
 		Eigen::Matrix<T, 3, 1> lpb{T(last_point_b.x()), T(last_point_b.y()), T(last_point_b.z())};
@@ -26,15 +26,21 @@ struct LidarEdgeFactor
 		//Eigen::Quaternion<T> q_last_curr{q[3], T(s) * q[0], T(s) * q[1], T(s) * q[2]};
 		Eigen::Quaternion<T> q_last_curr{q[3], q[0], q[1], q[2]};
 		Eigen::Quaternion<T> q_identity{T(1), T(0), T(0), T(0)};
+		// 考虑运动补偿，ktti点云已经补偿过所以可以忽略下面的对四元数slerp插值以及对平移的线性插值
 		q_last_curr = q_identity.slerp(T(s), q_last_curr);
 		Eigen::Matrix<T, 3, 1> t_last_curr{T(s) * t[0], T(s) * t[1], T(s) * t[2]};
 
 		Eigen::Matrix<T, 3, 1> lp;
+		// Odometry线程时，下面是将当前帧Lidar坐标系下的cp点变换到上一帧的Lidar坐标系下，然后在上一帧的Lidar坐标系计算点到线的残差距离
+		// Mapping线程时，下面是将当前帧Lidar坐标系下的cp点变换到world坐标系下，然后在world坐标系下计算点到线的残差距离
 		lp = q_last_curr * cp + t_last_curr;
 
+		// 点到线的计算如下图所示
 		Eigen::Matrix<T, 3, 1> nu = (lp - lpa).cross(lp - lpb);
 		Eigen::Matrix<T, 3, 1> de = lpa - lpb;
 
+		// 最终的残差本来应该是residual[0] = nu.norm() / de.norm(); 为啥也分成3个，我也不知
+		// 道，从我试验的效果来看，确实是下面的残差函数形式，最后输出的pose精度会好一点点
 		residual[0] = nu.x() / de.norm();
 		residual[1] = nu.y() / de.norm();
 		residual[2] = nu.z() / de.norm();
@@ -47,6 +53,11 @@ struct LidarEdgeFactor
 	{
 		return (new ceres::AutoDiffCostFunction<
 				LidarEdgeFactor, 3, 4, 3>(
+//					             ^  ^  ^
+//					             |  |  |
+//			      残差的维度 ____|  |  |
+//			 优化变量q的维度 _______|  |
+//			 优化变量t的维度 __________|
 			new LidarEdgeFactor(curr_point_, last_point_a_, last_point_b_, s_)));
 	}
 
@@ -54,6 +65,7 @@ struct LidarEdgeFactor
 	double s;
 };
 
+// 计算Odometry线程中点到面的残差距离
 struct LidarPlaneFactor
 {
 	LidarPlaneFactor(Eigen::Vector3d curr_point_, Eigen::Vector3d last_point_j_,
@@ -61,7 +73,9 @@ struct LidarPlaneFactor
 		: curr_point(curr_point_), last_point_j(last_point_j_), last_point_l(last_point_l_),
 		  last_point_m(last_point_m_), s(s_)
 	{
+		// 点l、j、m就是搜索到的最近邻的3个点，下面就是计算出这三个点构成的平面ljlm的法向量
 		ljm_norm = (last_point_j - last_point_l).cross(last_point_j - last_point_m);
+		// 归一化法向量
 		ljm_norm.normalize();
 	}
 
@@ -84,6 +98,7 @@ struct LidarPlaneFactor
 		Eigen::Matrix<T, 3, 1> lp;
 		lp = q_last_curr * cp + t_last_curr;
 
+		// 计算点到平面的残差距离，如下图所示
 		residual[0] = (lp - lpj).dot(ljm);
 
 		return true;
@@ -95,6 +110,11 @@ struct LidarPlaneFactor
 	{
 		return (new ceres::AutoDiffCostFunction<
 				LidarPlaneFactor, 1, 4, 3>(
+//				 	              ^  ^  ^
+//			 		              |  |  |
+//			       残差的维度 ____|  |  |
+//			  优化变量q的维度 _______|  |
+//		 	  优化变量t的维度 __________|
 			new LidarPlaneFactor(curr_point_, last_point_j_, last_point_l_, last_point_m_, s_)));
 	}
 

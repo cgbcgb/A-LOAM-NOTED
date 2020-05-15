@@ -133,6 +133,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
     pcl::fromROSMsg(*laserCloudMsg, laserCloudIn);
     std::vector<int> indices;
 
+    // 首先对点云滤波，去除NaN值得无效点云，以及在Lidar坐标系原点MINIMUM_RANGE距离以内的点
     pcl::removeNaNFromPointCloud(laserCloudIn, laserCloudIn, indices);
     removeClosedPointCloud(laserCloudIn, laserCloudIn, MINIMUM_RANGE);
 
@@ -246,9 +247,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
     pcl::PointCloud<PointType>::Ptr laserCloud(new pcl::PointCloud<PointType>());
     for (int i = 0; i < N_SCANS; i++)
     { 
-        scanStartInd[i] = laserCloud->size() + 5;
+        scanStartInd[i] = laserCloud->size() + 5;// 记录每个scan的开始index，忽略前5个点
         *laserCloud += laserCloudScans[i];
-        scanEndInd[i] = laserCloud->size() - 6;
+        scanEndInd[i] = laserCloud->size() - 6;// 记录每个scan的结束index，忽略后5个点，开始和结束处的点云scan容易产生不闭合的“接缝”，对提取edge feature不利
     }
 
     printf("prepare time %f \n", t_prepare.toc());
@@ -261,8 +262,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
 
         cloudCurvature[i] = diffX * diffX + diffY * diffY + diffZ * diffZ;
         cloudSortInd[i] = i;
-        cloudNeighborPicked[i] = 0;
-        cloudLabel[i] = 0;
+        cloudNeighborPicked[i] = 0;// 点有没有被选选择为feature点
+        cloudLabel[i] = 0;// Label 2: corner_sharp
+                          // Label 1: corner_less_sharp, 包含Label 2
+                          // Label -1: surf_flat
+                          // Label 0: surf_less_flat， 包含Label -1，因为点太多，最后会降采样
     }
 
 
@@ -274,37 +278,36 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
     pcl::PointCloud<PointType> surfPointsLessFlat;
 
     float t_q_sort = 0;
-    for (int i = 0; i < N_SCANS; i++)
+    for (int i = 0; i < N_SCANS; i++)// 按照scan的顺序提取4种特征点
     {
-        if( scanEndInd[i] - scanStartInd[i] < 6)
+        if( scanEndInd[i] - scanStartInd[i] < 6)// 如果该scan的点数少于7个点，就跳过
             continue;
         pcl::PointCloud<PointType>::Ptr surfPointsLessFlatScan(new pcl::PointCloud<PointType>);
-        for (int j = 0; j < 6; j++)
+        for (int j = 0; j < 6; j++)// 将该scan分成6小段执行特征检测
         {
-            int sp = scanStartInd[i] + (scanEndInd[i] - scanStartInd[i]) * j / 6; 
-            int ep = scanStartInd[i] + (scanEndInd[i] - scanStartInd[i]) * (j + 1) / 6 - 1;
+            int sp = scanStartInd[i] + (scanEndInd[i] - scanStartInd[i]) * j / 6;// subscan的起始index
+            int ep = scanStartInd[i] + (scanEndInd[i] - scanStartInd[i]) * (j + 1) / 6 - 1;// subscan的结束index
 
             TicToc t_tmp;
-            std::sort (cloudSortInd + sp, cloudSortInd + ep + 1, comp);
+            std::sort (cloudSortInd + sp, cloudSortInd + ep + 1, comp);// 根据曲率有小到大对subscan的点进行sort
             t_q_sort += t_tmp.toc();
 
             int largestPickedNum = 0;
-            for (int k = ep; k >= sp; k--)
+            for (int k = ep; k >= sp; k--)// 从后往前，即从曲率大的点开始提取corner feature
             {
                 int ind = cloudSortInd[k]; 
 
                 if (cloudNeighborPicked[ind] == 0 &&
-                    cloudCurvature[ind] > 0.1)
+                    cloudCurvature[ind] > 0.1)// 如果该点没有被选择过，并且曲率大于0.1
                 {
-
                     largestPickedNum++;
-                    if (largestPickedNum <= 2)
+                    if (largestPickedNum <= 2)// 该subscan中曲率最大的前2个点认为是corner_sharp特征点
                     {                        
                         cloudLabel[ind] = 2;
                         cornerPointsSharp.push_back(laserCloud->points[ind]);
                         cornerPointsLessSharp.push_back(laserCloud->points[ind]);
                     }
-                    else if (largestPickedNum <= 20)
+                    else if (largestPickedNum <= 20)// 该subscan中曲率最大的前20个点认为是corner_less_sharp特征点
                     {                        
                         cloudLabel[ind] = 1; 
                         cornerPointsLessSharp.push_back(laserCloud->points[ind]);
@@ -314,8 +317,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
                         break;
                     }
 
-                    cloudNeighborPicked[ind] = 1; 
+                    cloudNeighborPicked[ind] = 1;// 标记该点被选择过了
 
+                    // 与当前点距离的平方 <= 0.05的点标记为选择过，避免特征点密集分布
                     for (int l = 1; l <= 5; l++)
                     {
                         float diffX = laserCloud->points[ind + l].x - laserCloud->points[ind + l - 1].x;
@@ -343,6 +347,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
                 }
             }
 
+            // 提取surf平面feature，与上述类似，选取该subscan曲率最小的前4个点为surf_flat
             int smallestPickedNum = 0;
             for (int k = sp; k <= ep; k++)
             {
@@ -389,6 +394,8 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
                 }
             }
 
+            
+            // 其他的非corner特征点与surf_flat特征点一起组成surf_less_flat特征点
             for (int k = sp; k <= ep; k++)
             {
                 if (cloudLabel[k] <= 0)
@@ -398,6 +405,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
             }
         }
 
+        // 最后对该scan点云中提取的所有surf_less_flat特征点进行降采样，因为点太多了
         pcl::PointCloud<PointType> surfPointsLessFlatScanDS;
         pcl::VoxelGrid<PointType> downSizeFilter;
         downSizeFilter.setInputCloud(surfPointsLessFlatScan);

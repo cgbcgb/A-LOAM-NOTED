@@ -106,7 +106,9 @@ int main(int argc, char** argv)
         }
 
         Eigen::Quaterniond q_w_i(gt_pose.topLeftCorner<3, 3>());
-        Eigen::Quaterniond q = q_transform * q_w_i;
+//        Eigen::Quaterniond q = q_transform * q_w_i;
+//        此处应该添加 * q_transform.inverse()，如下所示
+        Eigen::Quaterniond q = q_transform * q_w_i *q_transform.inverse();
         q.normalize();
         Eigen::Vector3d t = q_transform * gt_pose.topRightCorner<3, 1>();
 
