@@ -40,7 +40,8 @@ struct LidarEdgeFactor
 		Eigen::Matrix<T, 3, 1> de = lpa - lpb;
 
 		// 最终的残差本来应该是residual[0] = nu.norm() / de.norm(); 为啥也分成3个，我也不知
-		// 道，从我试验的效果来看，确实是下面的残差函数形式，最后输出的pose精度会好一点点
+		// 道，从我试验的效果来看，确实是下面的残差函数形式，最后输出的pose精度会好一点点，这里需要
+		// 注意的是，所有的residual都不用加fabs，因为Ceres内部会对其求 平方 作为最终的残差项
 		residual[0] = nu.x() / de.norm();
 		residual[1] = nu.y() / de.norm();
 		residual[2] = nu.z() / de.norm();
