@@ -543,7 +543,7 @@ void process()
 			int laserCloudValidNum = 0;
 			int laserCloudSurroundNum = 0;
 
-			// 向IJK坐标轴的正负方向各拓展2个cube，上图中五角星所在的蓝色cube就是当前位置
+			// 向IJ坐标轴的正负方向各拓展2个cube，K坐标轴的正负方向各拓展1个cube，上图中五角星所在的蓝色cube就是当前位置
 			// 所处的cube，拓展的cube就是黄色的cube，这些cube就是submap的范围
 			for (int i = centerCubeI - 2; i <= centerCubeI + 2; i++)
 			{
