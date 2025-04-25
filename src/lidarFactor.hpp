@@ -9,7 +9,7 @@
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl_conversions/pcl_conversions.h>
 
-// µãµ½ÏßµÄ²Ğ²î¾àÀë¼ÆËã
+// ç‚¹åˆ°çº¿çš„æ®‹å·®è·ç¦»è®¡ç®—
 struct LidarEdgeFactor
 {
 	LidarEdgeFactor(Eigen::Vector3d curr_point_, Eigen::Vector3d last_point_a_,
@@ -26,22 +26,22 @@ struct LidarEdgeFactor
 		//Eigen::Quaternion<T> q_last_curr{q[3], T(s) * q[0], T(s) * q[1], T(s) * q[2]};
 		Eigen::Quaternion<T> q_last_curr{q[3], q[0], q[1], q[2]};
 		Eigen::Quaternion<T> q_identity{T(1), T(0), T(0), T(0)};
-		// ¿¼ÂÇÔË¶¯²¹³¥£¬kttiµãÔÆÒÑ¾­²¹³¥¹ıËùÒÔ¿ÉÒÔºöÂÔÏÂÃæµÄ¶ÔËÄÔªÊıslerp²åÖµÒÔ¼°¶ÔÆ½ÒÆµÄÏßĞÔ²åÖµ
+		// è€ƒè™‘è¿åŠ¨è¡¥å¿ï¼Œkttiç‚¹äº‘å·²ç»è¡¥å¿è¿‡æ‰€ä»¥å¯ä»¥å¿½ç•¥ä¸‹é¢çš„å¯¹å››å…ƒæ•°slerpæ’å€¼ä»¥åŠå¯¹å¹³ç§»çš„çº¿æ€§æ’å€¼
 		q_last_curr = q_identity.slerp(T(s), q_last_curr);
 		Eigen::Matrix<T, 3, 1> t_last_curr{T(s) * t[0], T(s) * t[1], T(s) * t[2]};
 
 		Eigen::Matrix<T, 3, 1> lp;
-		// OdometryÏß³ÌÊ±£¬ÏÂÃæÊÇ½«µ±Ç°Ö¡Lidar×ø±êÏµÏÂµÄcpµã±ä»»µ½ÉÏÒ»Ö¡µÄLidar×ø±êÏµÏÂ£¬È»ºóÔÚÉÏÒ»Ö¡µÄLidar×ø±êÏµ¼ÆËãµãµ½ÏßµÄ²Ğ²î¾àÀë
-		// MappingÏß³ÌÊ±£¬ÏÂÃæÊÇ½«µ±Ç°Ö¡Lidar×ø±êÏµÏÂµÄcpµã±ä»»µ½world×ø±êÏµÏÂ£¬È»ºóÔÚworld×ø±êÏµÏÂ¼ÆËãµãµ½ÏßµÄ²Ğ²î¾àÀë
+		// Odometryçº¿ç¨‹æ—¶ï¼Œä¸‹é¢æ˜¯å°†å½“å‰å¸§Lidaråæ ‡ç³»ä¸‹çš„cpç‚¹å˜æ¢åˆ°ä¸Šä¸€å¸§çš„Lidaråæ ‡ç³»ä¸‹ï¼Œç„¶ååœ¨ä¸Šä¸€å¸§çš„Lidaråæ ‡ç³»è®¡ç®—ç‚¹åˆ°çº¿çš„æ®‹å·®è·ç¦»
+		// Mappingçº¿ç¨‹æ—¶ï¼Œä¸‹é¢æ˜¯å°†å½“å‰å¸§Lidaråæ ‡ç³»ä¸‹çš„cpç‚¹å˜æ¢åˆ°worldåæ ‡ç³»ä¸‹ï¼Œç„¶ååœ¨worldåæ ‡ç³»ä¸‹è®¡ç®—ç‚¹åˆ°çº¿çš„æ®‹å·®è·ç¦»
 		lp = q_last_curr * cp + t_last_curr;
 
-		// µãµ½ÏßµÄ¼ÆËãÈçÏÂÍ¼ËùÊ¾
+		// ç‚¹åˆ°çº¿çš„è®¡ç®—å¦‚ä¸‹å›¾æ‰€ç¤º
 		Eigen::Matrix<T, 3, 1> nu = (lp - lpa).cross(lp - lpb);
 		Eigen::Matrix<T, 3, 1> de = lpa - lpb;
 
-		// ×îÖÕµÄ²Ğ²î±¾À´Ó¦¸ÃÊÇresidual[0] = nu.norm() / de.norm(); ÎªÉ¶Ò²·Ö³É3¸ö£¬ÎÒÒ²²»Öª
-		// µÀ£¬´ÓÎÒÊÔÑéµÄĞ§¹ûÀ´¿´£¬È·ÊµÊÇÏÂÃæµÄ²Ğ²îº¯ÊıĞÎÊ½£¬×îºóÊä³öµÄpose¾«¶È»áºÃÒ»µãµã£¬ÕâÀïĞèÒª
-		// ×¢ÒâµÄÊÇ£¬ËùÓĞµÄresidual¶¼²»ÓÃ¼Ófabs£¬ÒòÎªCeresÄÚ²¿»á¶ÔÆäÇó Æ½·½ ×÷Îª×îÖÕµÄ²Ğ²îÏî
+		// æœ€ç»ˆçš„æ®‹å·®æœ¬æ¥åº”è¯¥æ˜¯residual[0] = nu.norm() / de.norm(); ä¸ºå•¥ä¹Ÿåˆ†æˆ3ä¸ªï¼Œæˆ‘ä¹Ÿä¸çŸ¥
+		// é“ï¼Œä»æˆ‘è¯•éªŒçš„æ•ˆæœæ¥çœ‹ï¼Œç¡®å®æ˜¯ä¸‹é¢çš„æ®‹å·®å‡½æ•°å½¢å¼ï¼Œæœ€åè¾“å‡ºçš„poseç²¾åº¦ä¼šå¥½ä¸€ç‚¹ç‚¹ï¼Œè¿™é‡Œéœ€è¦
+		// æ³¨æ„çš„æ˜¯ï¼Œæ‰€æœ‰çš„residualéƒ½ä¸ç”¨åŠ fabsï¼Œå› ä¸ºCereså†…éƒ¨ä¼šå¯¹å…¶æ±‚ å¹³æ–¹ ä½œä¸ºæœ€ç»ˆçš„æ®‹å·®é¡¹
 		residual[0] = nu.x() / de.norm();
 		residual[1] = nu.y() / de.norm();
 		residual[2] = nu.z() / de.norm();
@@ -56,9 +56,9 @@ struct LidarEdgeFactor
 				LidarEdgeFactor, 3, 4, 3>(
 //					             ^  ^  ^
 //					             |  |  |
-//			      ²Ğ²îµÄÎ¬¶È ____|  |  |
-//			 ÓÅ»¯±äÁ¿qµÄÎ¬¶È _______|  |
-//			 ÓÅ»¯±äÁ¿tµÄÎ¬¶È __________|
+//			      æ®‹å·®çš„ç»´åº¦ ____|  |  |
+//			 ä¼˜åŒ–å˜é‡qçš„ç»´åº¦ _______|  |
+//			 ä¼˜åŒ–å˜é‡tçš„ç»´åº¦ __________|
 			new LidarEdgeFactor(curr_point_, last_point_a_, last_point_b_, s_)));
 	}
 
@@ -66,7 +66,7 @@ struct LidarEdgeFactor
 	double s;
 };
 
-// ¼ÆËãOdometryÏß³ÌÖĞµãµ½ÃæµÄ²Ğ²î¾àÀë
+// è®¡ç®—Odometryçº¿ç¨‹ä¸­ç‚¹åˆ°é¢çš„æ®‹å·®è·ç¦»
 struct LidarPlaneFactor
 {
 	LidarPlaneFactor(Eigen::Vector3d curr_point_, Eigen::Vector3d last_point_j_,
@@ -74,9 +74,9 @@ struct LidarPlaneFactor
 		: curr_point(curr_point_), last_point_j(last_point_j_), last_point_l(last_point_l_),
 		  last_point_m(last_point_m_), s(s_)
 	{
-		// µãl¡¢j¡¢m¾ÍÊÇËÑË÷µ½µÄ×î½üÁÚµÄ3¸öµã£¬ÏÂÃæ¾ÍÊÇ¼ÆËã³öÕâÈı¸öµã¹¹³ÉµÄÆ½ÃæljlmµÄ·¨ÏòÁ¿
+		// ç‚¹lã€jã€må°±æ˜¯æœç´¢åˆ°çš„æœ€è¿‘é‚»çš„3ä¸ªç‚¹ï¼Œä¸‹é¢å°±æ˜¯è®¡ç®—å‡ºè¿™ä¸‰ä¸ªç‚¹æ„æˆçš„å¹³é¢ljlmçš„æ³•å‘é‡
 		ljm_norm = (last_point_j - last_point_l).cross(last_point_j - last_point_m);
-		// ¹éÒ»»¯·¨ÏòÁ¿
+		// å½’ä¸€åŒ–æ³•å‘é‡
 		ljm_norm.normalize();
 	}
 
@@ -99,7 +99,7 @@ struct LidarPlaneFactor
 		Eigen::Matrix<T, 3, 1> lp;
 		lp = q_last_curr * cp + t_last_curr;
 
-		// ¼ÆËãµãµ½Æ½ÃæµÄ²Ğ²î¾àÀë£¬ÈçÏÂÍ¼ËùÊ¾
+		// è®¡ç®—ç‚¹åˆ°å¹³é¢çš„æ®‹å·®è·ç¦»ï¼Œå¦‚ä¸‹å›¾æ‰€ç¤º
 		residual[0] = (lp - lpj).dot(ljm);
 
 		return true;
@@ -113,9 +113,9 @@ struct LidarPlaneFactor
 				LidarPlaneFactor, 1, 4, 3>(
 //				 	              ^  ^  ^
 //			 		              |  |  |
-//			       ²Ğ²îµÄÎ¬¶È ____|  |  |
-//			  ÓÅ»¯±äÁ¿qµÄÎ¬¶È _______|  |
-//		 	  ÓÅ»¯±äÁ¿tµÄÎ¬¶È __________|
+//			       æ®‹å·®çš„ç»´åº¦ ____|  |  |
+//			  ä¼˜åŒ–å˜é‡qçš„ç»´åº¦ _______|  |
+//		 	  ä¼˜åŒ–å˜é‡tçš„ç»´åº¦ __________|
 			new LidarPlaneFactor(curr_point_, last_point_j_, last_point_l_, last_point_m_, s_)));
 	}
 

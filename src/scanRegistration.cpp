@@ -41,7 +41,7 @@
 #include "aloam_velodyne/common.h"
 #include "aloam_velodyne/tic_toc.h"
 #include <nav_msgs/Odometry.h>
-#include <opencv/cv.h>
+#include <opencv2/imgproc.hpp>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -133,7 +133,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
     pcl::fromROSMsg(*laserCloudMsg, laserCloudIn);
     std::vector<int> indices;
 
-    // Ê×ÏÈ¶ÔµãÔÆÂË²¨£¬È¥³ıNaNÖµµÃÎŞĞ§µãÔÆ£¬ÒÔ¼°ÔÚLidar×ø±êÏµÔ­µãMINIMUM_RANGE¾àÀëÒÔÄÚµÄµã
+    // é¦–å…ˆå¯¹ç‚¹äº‘æ»¤æ³¢ï¼Œå»é™¤NaNå€¼å¾—æ— æ•ˆç‚¹äº‘ï¼Œä»¥åŠåœ¨Lidaråæ ‡ç³»åŸç‚¹MINIMUM_RANGEè·ç¦»ä»¥å†…çš„ç‚¹
     pcl::removeNaNFromPointCloud(laserCloudIn, laserCloudIn, indices);
     removeClosedPointCloud(laserCloudIn, laserCloudIn, MINIMUM_RANGE);
 
@@ -247,9 +247,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
     pcl::PointCloud<PointType>::Ptr laserCloud(new pcl::PointCloud<PointType>());
     for (int i = 0; i < N_SCANS; i++)
     { 
-        scanStartInd[i] = laserCloud->size() + 5;// ¼ÇÂ¼Ã¿¸öscanµÄ¿ªÊ¼index£¬ºöÂÔÇ°5¸öµã
+        scanStartInd[i] = laserCloud->size() + 5;// è®°å½•æ¯ä¸ªscançš„å¼€å§‹indexï¼Œå¿½ç•¥å‰5ä¸ªç‚¹
         *laserCloud += laserCloudScans[i];
-        scanEndInd[i] = laserCloud->size() - 6;// ¼ÇÂ¼Ã¿¸öscanµÄ½áÊøindex£¬ºöÂÔºó5¸öµã£¬¿ªÊ¼ºÍ½áÊø´¦µÄµãÔÆscanÈİÒ×²úÉú²»±ÕºÏµÄ¡°½Ó·ì¡±£¬¶ÔÌáÈ¡edge feature²»Àû
+        scanEndInd[i] = laserCloud->size() - 6;// è®°å½•æ¯ä¸ªscançš„ç»“æŸindexï¼Œå¿½ç•¥å5ä¸ªç‚¹ï¼Œå¼€å§‹å’Œç»“æŸå¤„çš„ç‚¹äº‘scanå®¹æ˜“äº§ç”Ÿä¸é—­åˆçš„â€œæ¥ç¼â€ï¼Œå¯¹æå–edge featureä¸åˆ©
     }
 
     printf("prepare time %f \n", t_prepare.toc());
@@ -262,11 +262,11 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
 
         cloudCurvature[i] = diffX * diffX + diffY * diffY + diffZ * diffZ;
         cloudSortInd[i] = i;
-        cloudNeighborPicked[i] = 0;// µãÓĞÃ»ÓĞ±»Ñ¡Ñ¡ÔñÎªfeatureµã
+        cloudNeighborPicked[i] = 0;// ç‚¹æœ‰æ²¡æœ‰è¢«é€‰é€‰æ‹©ä¸ºfeatureç‚¹
         cloudLabel[i] = 0;// Label 2: corner_sharp
-                          // Label 1: corner_less_sharp, °üº¬Label 2
+                          // Label 1: corner_less_sharp, åŒ…å«Label 2
                           // Label -1: surf_flat
-                          // Label 0: surf_less_flat£¬ °üº¬Label -1£¬ÒòÎªµãÌ«¶à£¬×îºó»á½µ²ÉÑù
+                          // Label 0: surf_less_flatï¼Œ åŒ…å«Label -1ï¼Œå› ä¸ºç‚¹å¤ªå¤šï¼Œæœ€åä¼šé™é‡‡æ ·
     }
 
 
@@ -278,36 +278,36 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
     pcl::PointCloud<PointType> surfPointsLessFlat;
 
     float t_q_sort = 0;
-    for (int i = 0; i < N_SCANS; i++)// °´ÕÕscanµÄË³ĞòÌáÈ¡4ÖÖÌØÕ÷µã
+    for (int i = 0; i < N_SCANS; i++)// æŒ‰ç…§scançš„é¡ºåºæå–4ç§ç‰¹å¾ç‚¹
     {
-        if( scanEndInd[i] - scanStartInd[i] < 6)// Èç¹û¸ÃscanµÄµãÊıÉÙÓÚ7¸öµã£¬¾ÍÌø¹ı
+        if( scanEndInd[i] - scanStartInd[i] < 6)// å¦‚æœè¯¥scançš„ç‚¹æ•°å°‘äº7ä¸ªç‚¹ï¼Œå°±è·³è¿‡
             continue;
         pcl::PointCloud<PointType>::Ptr surfPointsLessFlatScan(new pcl::PointCloud<PointType>);
-        for (int j = 0; j < 6; j++)// ½«¸Ãscan·Ö³É6Ğ¡¶ÎÖ´ĞĞÌØÕ÷¼ì²â
+        for (int j = 0; j < 6; j++)// å°†è¯¥scanåˆ†æˆ6å°æ®µæ‰§è¡Œç‰¹å¾æ£€æµ‹
         {
-            int sp = scanStartInd[i] + (scanEndInd[i] - scanStartInd[i]) * j / 6;// subscanµÄÆğÊ¼index
-            int ep = scanStartInd[i] + (scanEndInd[i] - scanStartInd[i]) * (j + 1) / 6 - 1;// subscanµÄ½áÊøindex
+            int sp = scanStartInd[i] + (scanEndInd[i] - scanStartInd[i]) * j / 6;// subscançš„èµ·å§‹index
+            int ep = scanStartInd[i] + (scanEndInd[i] - scanStartInd[i]) * (j + 1) / 6 - 1;// subscançš„ç»“æŸindex
 
             TicToc t_tmp;
-            std::sort (cloudSortInd + sp, cloudSortInd + ep + 1, comp);// ¸ù¾İÇúÂÊÓĞĞ¡µ½´ó¶ÔsubscanµÄµã½øĞĞsort
+            std::sort (cloudSortInd + sp, cloudSortInd + ep + 1, comp);// æ ¹æ®æ›²ç‡æœ‰å°åˆ°å¤§å¯¹subscançš„ç‚¹è¿›è¡Œsort
             t_q_sort += t_tmp.toc();
 
             int largestPickedNum = 0;
-            for (int k = ep; k >= sp; k--)// ´ÓºóÍùÇ°£¬¼´´ÓÇúÂÊ´óµÄµã¿ªÊ¼ÌáÈ¡corner feature
+            for (int k = ep; k >= sp; k--)// ä»åå¾€å‰ï¼Œå³ä»æ›²ç‡å¤§çš„ç‚¹å¼€å§‹æå–corner feature
             {
                 int ind = cloudSortInd[k]; 
 
                 if (cloudNeighborPicked[ind] == 0 &&
-                    cloudCurvature[ind] > 0.1)// Èç¹û¸ÃµãÃ»ÓĞ±»Ñ¡Ôñ¹ı£¬²¢ÇÒÇúÂÊ´óÓÚ0.1
+                    cloudCurvature[ind] > 0.1)// å¦‚æœè¯¥ç‚¹æ²¡æœ‰è¢«é€‰æ‹©è¿‡ï¼Œå¹¶ä¸”æ›²ç‡å¤§äº0.1
                 {
                     largestPickedNum++;
-                    if (largestPickedNum <= 2)// ¸ÃsubscanÖĞÇúÂÊ×î´óµÄÇ°2¸öµãÈÏÎªÊÇcorner_sharpÌØÕ÷µã
+                    if (largestPickedNum <= 2)// è¯¥subscanä¸­æ›²ç‡æœ€å¤§çš„å‰2ä¸ªç‚¹è®¤ä¸ºæ˜¯corner_sharpç‰¹å¾ç‚¹
                     {                        
                         cloudLabel[ind] = 2;
                         cornerPointsSharp.push_back(laserCloud->points[ind]);
                         cornerPointsLessSharp.push_back(laserCloud->points[ind]);
                     }
-                    else if (largestPickedNum <= 20)// ¸ÃsubscanÖĞÇúÂÊ×î´óµÄÇ°20¸öµãÈÏÎªÊÇcorner_less_sharpÌØÕ÷µã
+                    else if (largestPickedNum <= 20)// è¯¥subscanä¸­æ›²ç‡æœ€å¤§çš„å‰20ä¸ªç‚¹è®¤ä¸ºæ˜¯corner_less_sharpç‰¹å¾ç‚¹
                     {                        
                         cloudLabel[ind] = 1; 
                         cornerPointsLessSharp.push_back(laserCloud->points[ind]);
@@ -317,9 +317,9 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
                         break;
                     }
 
-                    cloudNeighborPicked[ind] = 1;// ±ê¼Ç¸Ãµã±»Ñ¡Ôñ¹ıÁË
+                    cloudNeighborPicked[ind] = 1;// æ ‡è®°è¯¥ç‚¹è¢«é€‰æ‹©è¿‡äº†
 
-                    // Óëµ±Ç°µã¾àÀëµÄÆ½·½ <= 0.05µÄµã±ê¼ÇÎªÑ¡Ôñ¹ı£¬±ÜÃâÌØÕ÷µãÃÜ¼¯·Ö²¼
+                    // ä¸å½“å‰ç‚¹è·ç¦»çš„å¹³æ–¹ <= 0.05çš„ç‚¹æ ‡è®°ä¸ºé€‰æ‹©è¿‡ï¼Œé¿å…ç‰¹å¾ç‚¹å¯†é›†åˆ†å¸ƒ
                     for (int l = 1; l <= 5; l++)
                     {
                         float diffX = laserCloud->points[ind + l].x - laserCloud->points[ind + l - 1].x;
@@ -347,7 +347,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
                 }
             }
 
-            // ÌáÈ¡surfÆ½Ãæfeature£¬ÓëÉÏÊöÀàËÆ£¬Ñ¡È¡¸ÃsubscanÇúÂÊ×îĞ¡µÄÇ°4¸öµãÎªsurf_flat
+            // æå–surfå¹³é¢featureï¼Œä¸ä¸Šè¿°ç±»ä¼¼ï¼Œé€‰å–è¯¥subscanæ›²ç‡æœ€å°çš„å‰4ä¸ªç‚¹ä¸ºsurf_flat
             int smallestPickedNum = 0;
             for (int k = sp; k <= ep; k++)
             {
@@ -395,7 +395,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
             }
 
             
-            // ÆäËûµÄ·ÇcornerÌØÕ÷µãÓësurf_flatÌØÕ÷µãÒ»Æğ×é³Ésurf_less_flatÌØÕ÷µã
+            // å…¶ä»–çš„écornerç‰¹å¾ç‚¹ä¸surf_flatç‰¹å¾ç‚¹ä¸€èµ·ç»„æˆsurf_less_flatç‰¹å¾ç‚¹
             for (int k = sp; k <= ep; k++)
             {
                 if (cloudLabel[k] <= 0)
@@ -405,7 +405,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
             }
         }
 
-        // ×îºó¶Ô¸ÃscanµãÔÆÖĞÌáÈ¡µÄËùÓĞsurf_less_flatÌØÕ÷µã½øĞĞ½µ²ÉÑù£¬ÒòÎªµãÌ«¶àÁË
+        // æœ€åå¯¹è¯¥scanç‚¹äº‘ä¸­æå–çš„æ‰€æœ‰surf_less_flatç‰¹å¾ç‚¹è¿›è¡Œé™é‡‡æ ·ï¼Œå› ä¸ºç‚¹å¤ªå¤šäº†
         pcl::PointCloud<PointType> surfPointsLessFlatScanDS;
         pcl::VoxelGrid<PointType> downSizeFilter;
         downSizeFilter.setInputCloud(surfPointsLessFlatScan);
@@ -421,31 +421,31 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
     sensor_msgs::PointCloud2 laserCloudOutMsg;
     pcl::toROSMsg(*laserCloud, laserCloudOutMsg);
     laserCloudOutMsg.header.stamp = laserCloudMsg->header.stamp;
-    laserCloudOutMsg.header.frame_id = "/camera_init";
+    laserCloudOutMsg.header.frame_id = "camera_init";
     pubLaserCloud.publish(laserCloudOutMsg);
 
     sensor_msgs::PointCloud2 cornerPointsSharpMsg;
     pcl::toROSMsg(cornerPointsSharp, cornerPointsSharpMsg);
     cornerPointsSharpMsg.header.stamp = laserCloudMsg->header.stamp;
-    cornerPointsSharpMsg.header.frame_id = "/camera_init";
+    cornerPointsSharpMsg.header.frame_id = "camera_init";
     pubCornerPointsSharp.publish(cornerPointsSharpMsg);
 
     sensor_msgs::PointCloud2 cornerPointsLessSharpMsg;
     pcl::toROSMsg(cornerPointsLessSharp, cornerPointsLessSharpMsg);
     cornerPointsLessSharpMsg.header.stamp = laserCloudMsg->header.stamp;
-    cornerPointsLessSharpMsg.header.frame_id = "/camera_init";
+    cornerPointsLessSharpMsg.header.frame_id = "camera_init";
     pubCornerPointsLessSharp.publish(cornerPointsLessSharpMsg);
 
     sensor_msgs::PointCloud2 surfPointsFlat2;
     pcl::toROSMsg(surfPointsFlat, surfPointsFlat2);
     surfPointsFlat2.header.stamp = laserCloudMsg->header.stamp;
-    surfPointsFlat2.header.frame_id = "/camera_init";
+    surfPointsFlat2.header.frame_id = "camera_init";
     pubSurfPointsFlat.publish(surfPointsFlat2);
 
     sensor_msgs::PointCloud2 surfPointsLessFlat2;
     pcl::toROSMsg(surfPointsLessFlat, surfPointsLessFlat2);
     surfPointsLessFlat2.header.stamp = laserCloudMsg->header.stamp;
-    surfPointsLessFlat2.header.frame_id = "/camera_init";
+    surfPointsLessFlat2.header.frame_id = "camera_init";
     pubSurfPointsLessFlat.publish(surfPointsLessFlat2);
 
     // pub each scam
@@ -456,7 +456,7 @@ void laserCloudHandler(const sensor_msgs::PointCloud2ConstPtr &laserCloudMsg)
             sensor_msgs::PointCloud2 scanMsg;
             pcl::toROSMsg(laserCloudScans[i], scanMsg);
             scanMsg.header.stamp = laserCloudMsg->header.stamp;
-            scanMsg.header.frame_id = "/camera_init";
+            scanMsg.header.frame_id = "camera_init";
             pubEachScan[i].publish(scanMsg);
         }
     }
